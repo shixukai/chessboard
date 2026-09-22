@@ -16,6 +16,9 @@
     box-sizing: content-box;
     transform-origin: top left;
     transform: scale(var(--board-scale, 1));
+    box-shadow: 0 8px 28px rgba(35, 18, 8, 0.45);
+    border-radius: 4px;
+    image-rendering: -webkit-optimize-contrast;
 }
 
 .piece-wrap {
