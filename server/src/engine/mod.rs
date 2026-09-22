@@ -73,8 +73,8 @@ impl Engine {
     }
 
     pub fn reload(&mut self, libs: &Path, config: &EngineConfig) {
-        self.child.kill().unwrap();
-        self.child.wait().unwrap();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
         *self = Self::new(libs);
         self.set_hash(config.hash);
         self.set_show_wdl(config.show_wdl);
@@ -82,8 +82,11 @@ impl Engine {
     }
 
     fn write_command<A: Display>(&mut self, args: A) {
-        writeln!(self.stdin, "{}", args).expect("write command error");
-        self.stdin.flush().expect("write command flush error");
+        if let Err(e) = writeln!(self.stdin, "{}", args) {
+            tracing::warn!("write command error: {}", e);
+            return;
+        }
+        let _ = self.stdin.flush();
         debug!("{}", args);
     }
 
@@ -99,62 +102,85 @@ impl Engine {
 
     pub fn position(&mut self, fen: &str) { self.write_command(format!("position fen {}", fen)) }
 
-    fn read_line(&mut self) -> String {
+    fn read_line(&mut self) -> Option<String> {
         let mut line = String::new();
-        self.stdout.read_line(&mut line).unwrap();
-        trace!("line::{}", line);
-        line.trim().to_string()
+        match self.stdout.read_line(&mut line) {
+            Ok(0) => None, // EOF
+            Ok(_) => {
+                trace!("line::{}", line);
+                Some(line.trim().to_string())
+            }
+            Err(e) => {
+                tracing::warn!("read line error: {}", e);
+                None
+            }
+        }
     }
 
     fn parse_line(&self, line: String, result: &mut QueryResult) {
         let mut iter = line.split_whitespace();
         result.source = SOURCE_ENGINE.to_string();
-        loop {
-            if let Some(key) = iter.next() {
-                match key {
-                    "depth" => {
-                        result.depth = iter.next().unwrap().parse().unwrap();
+        while let Some(key) = iter.next() {
+            match key {
+                "depth" => {
+                    if let Some(val) = iter.next().and_then(|s| s.parse().ok()) {
+                        result.depth = val;
                     }
-                    "time" => {
-                        result.time = iter.next().unwrap().parse().unwrap();
-                    }
-                    "score" => match iter.next().unwrap() {
-                        "cp" => {
-                            result.score = iter.next().unwrap().parse().unwrap();
-                        }
-                        "mate" => {
-                            let round: isize = iter.next().unwrap().parse().unwrap();
-                            result.score = if round > 0 { 30000 - round } else { -(30000 + round) };
-                        }
-                        _ => {}
-                    },
-                    "pv" => loop {
-                        if let Some(pv) = iter.next() {
-                            result.pvs.push(pv.to_string());
-                            continue;
-                        }
-                        break;
-                    },
-                    _ => {}
                 }
-                continue;
+                "time" => {
+                    if let Some(val) = iter.next().and_then(|s| s.parse().ok()) {
+                        result.time = val;
+                    }
+                }
+                "score" => {
+                    if let Some(score_type) = iter.next() {
+                        match score_type {
+                            "cp" => {
+                                if let Some(val) = iter.next().and_then(|s| s.parse().ok()) {
+                                    result.score = val;
+                                }
+                            }
+                            "mate" => {
+                                if let Some(round) = iter.next().and_then(|s| s.parse::<isize>().ok()) {
+                                    result.score = if round > 0 { 30000 - round } else { -(30000 + round) };
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                "pv" => {
+                    while let Some(pv) = iter.next() {
+                        if !pv.is_empty() {
+                            result.pvs.push(pv.to_string());
+                        }
+                    }
+                    break;
+                }
+                _ => {}
             }
-            break;
         }
     }
 
-    fn bestmove(&mut self, depth: usize, time: usize) -> String {
+    fn bestmove(&mut self, depth: usize, time: usize) -> (String, Option<String>) {
         self.write_command(format!("go depth {} movetime {}", depth, time));
         let mut pre_line = String::new();
+        let mut bestmove_line = None;
         loop {
-            let line = self.read_line();
+            let Some(line) = self.read_line() else {
+                tracing::warn!("engine stdout EOF reached");
+                break;
+            };
             if line.starts_with("bestmove") {
                 trace!("{}", pre_line);
+                bestmove_line = Some(line);
                 break;
             }
-            pre_line = line;
+            if line.starts_with("info") {
+                pre_line = line;
+            }
         }
-        pre_line
+        (pre_line, bestmove_line)
     }
 
     pub async fn search(&mut self, fen: &str, params: &EngineConfig) -> Option<QueryResult> {
@@ -171,8 +197,22 @@ impl Engine {
             QueryState::ServerInternalError | QueryState::NotResult => {
                 // 查询云库失败调用引擎
                 self.position(fen);
-                let best_line = self.bestmove(params.depth, params.time);
+                let (best_line, bestmove_line) = self.bestmove(params.depth, params.time);
                 self.parse_line(best_line, &mut result);
+                if result.pvs.is_empty() {
+                    if let Some(bm) = bestmove_line {
+                        let mut parts = bm.split_whitespace();
+                        parts.next(); // skip "bestmove"
+                        if let Some(mv) = parts.next() {
+                            if mv != "(none)" && mv.len() >= 4 {
+                                result.pvs.push(mv.to_string());
+                            }
+                        }
+                    }
+                }
+                if !result.pvs.is_empty() {
+                    result.state = QueryState::Success;
+                }
                 Some(result)
             }
         }
@@ -181,7 +221,8 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        self.write_command("quit");
+        let _ = writeln!(self.stdin, "quit");
+        let _ = self.stdin.flush();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -209,7 +250,10 @@ mod tests {
     async fn test_engine() {
         logger::init_tracer(Level::TRACE, &std::path::PathBuf::from("."));
         let fen = "4k4/9/6r2/9/9/9/9/9/4A4/4K4 w";
-        let libs = path::PathBuf::from("/Users/atopx/script/chessboard/libs");
+        let libs = path::PathBuf::from("../libs/pikafish");
+        if !libs.exists() {
+            return;
+        }
         let mut eng = Engine::new(&libs);
         let cfg = EngineConfig { chessdb_enabled: false, ..Default::default() };
         let records = eng.search(fen, &cfg).await;

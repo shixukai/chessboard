@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { onMounted, ref, h, computed } from "vue";
+import { onMounted, ref, h, computed, defineComponent } from "vue";
 import { useDialog } from "naive-ui";
 import {
     NButton,
@@ -101,86 +101,93 @@ async function startListen() {
         }
 
         const selectedWindowId = ref<number | null>(null);
-        const searchQuery = ref("");
 
-        const filteredWindows = computed(() => {
-            if (!searchQuery.value) return windows;
-            const query = searchQuery.value.toLowerCase();
-            return windows.filter(
-                (w) => w.title.toLowerCase().includes(query) || w.app_name.toLowerCase().includes(query)
-            );
+        const WindowSelector = defineComponent({
+            setup() {
+                const searchQuery = ref("");
+                const filteredWindows = computed(() => {
+                    if (!searchQuery.value) return windows;
+                    const query = searchQuery.value.toLowerCase();
+                    return windows.filter(
+                        (w) => w.title.toLowerCase().includes(query) || w.app_name.toLowerCase().includes(query)
+                    );
+                });
+
+                return () =>
+                    h(NFlex, { vertical: true, style: "gap: 16px" }, [
+                        h(NInput, {
+                            clearable: true,
+                            placeholder: "搜索窗口...",
+                            value: searchQuery.value,
+                            "onUpdate:value": (val: string) => (searchQuery.value = val),
+                            style: "width: 100%",
+                        }),
+                        h(NScrollbar, { style: "max-height: 300px" }, [
+                            filteredWindows.value.length > 0
+                                ? h(
+                                      NSpace,
+                                      { vertical: true, size: "small" },
+                                      filteredWindows.value.map((w) =>
+                                          h(
+                                              NCard,
+                                              {
+                                                  hoverable: true,
+                                                  size: "small",
+                                                  bordered: true,
+                                                  class: selectedWindowId.value === w.id ? "selected-window" : "",
+                                                  onClick: () => (selectedWindowId.value = w.id),
+                                              },
+                                              {
+                                                  default: () => [
+                                                      h(NFlex, { align: "center", justify: "space-between" }, [
+                                                          h("div", [
+                                                              h("div", { class: "window-title" }, w.title),
+                                                              h("div", { class: "window-app" }, [
+                                                                  w.app_name,
+                                                                  h(
+                                                                      NTag,
+                                                                      {
+                                                                          size: "tiny",
+                                                                          type: "info",
+                                                                          style: "margin-left: 8px",
+                                                                      },
+                                                                      { default: () => `${w.width}×${w.height}` }
+                                                                  ),
+                                                              ]),
+                                                          ]),
+                                                          h(
+                                                              NButton,
+                                                              {
+                                                                  tertiary: true,
+                                                                  circle: true,
+                                                                  type:
+                                                                      selectedWindowId.value === w.id
+                                                                          ? "primary"
+                                                                          : "default",
+                                                                  size: "small",
+                                                              },
+                                                              {
+                                                                  default: () =>
+                                                                      selectedWindowId.value === w.id ? "✓" : "",
+                                                              }
+                                                          ),
+                                                      ]),
+                                                  ],
+                                              }
+                                          )
+                                      )
+                                  )
+                                : h(NEmpty, { description: "没有找到匹配的窗口" }),
+                        ]),
+                    ]);
+            },
         });
 
         // 显示窗口选择对话框
         dialog.info({
             title: "选择要监听的窗口",
             class: "window-select-dialog",
-            content: () =>
-                h(NFlex, { vertical: true, style: "gap: 16px" }, [
-                    h(NInput, {
-                        clearable: true,
-                        placeholder: "搜索窗口...",
-                        "onUpdate:value": (val) => (searchQuery.value = val),
-                        style: "width: 100%",
-                    }),
-                    h(NScrollbar, { style: "max-height: 300px" }, [
-                        filteredWindows.value.length > 0
-                            ? h(
-                                  NSpace,
-                                  { vertical: true, size: "small" },
-                                  filteredWindows.value.map((w) =>
-                                      h(
-                                          NCard,
-                                          {
-                                              hoverable: true,
-                                              size: "small",
-                                              bordered: true,
-                                              class: selectedWindowId.value === w.id ? "selected-window" : "",
-                                              onClick: () => (selectedWindowId.value = w.id),
-                                          },
-                                          {
-                                              default: () => [
-                                                  h(NFlex, { align: "center", justify: "space-between" }, [
-                                                      h("div", [
-                                                          h("div", { class: "window-title" }, w.title),
-                                                          h("div", { class: "window-app" }, [
-                                                              w.app_name,
-                                                              h(
-                                                                  NTag,
-                                                                  {
-                                                                      size: "tiny",
-                                                                      type: "info",
-                                                                      style: "margin-left: 8px",
-                                                                  },
-                                                                  { default: () => `${w.width}×${w.height}` }
-                                                              ),
-                                                          ]),
-                                                      ]),
-                                                      h(
-                                                          NButton,
-                                                          {
-                                                              tertiary: true,
-                                                              circle: true,
-                                                              type:
-                                                                  selectedWindowId.value === w.id
-                                                                      ? "primary"
-                                                                      : "default",
-                                                              size: "small",
-                                                          },
-                                                          {
-                                                              default: () =>
-                                                                  selectedWindowId.value === w.id ? "✓" : "",
-                                                          }
-                                                      ),
-                                                  ]),
-                                              ],
-                                          }
-                                      )
-                                  )
-                              )
-                            : h(NEmpty, { description: "没有找到匹配的窗口" }),
-                    ]),
-                ]),
+            content: () => h(WindowSelector),
             positiveText: "确定",
             negativeText: "取消",
             style: "max-width: 500px",
@@ -225,7 +232,7 @@ async function setEngineDepth() {
 }
 
 async function setEngineTime() {
-    await invoke("set_engine_time", { time: Math.round(config.value.time * 1000) });
+    await invoke("set_engine_time", { time: config.value.time });
 }
 
 async function setEngineThreads() {
@@ -341,7 +348,7 @@ async function toggleEngine() {
                         <n-input-number
                             v-model:value="config.threads"
                             button-placement="both"
-                            :min="0"
+                            :min="1"
                             :max="64"
                             style="width: 120px"
                             @update:value="setEngineThreads"

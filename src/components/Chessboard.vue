@@ -1,6 +1,6 @@
 <script setup lang="ts">
 
-import { emit, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { computed, onMounted, ref } from "vue";
 
 import "../assets/css/chessboard.css";
@@ -56,31 +56,30 @@ const startpos: Position[] = [
 
 // 设置棋子的函数
 async function setPiecesOnBoard(pieces: Position[]) {
+    // 移除 select
+    document.querySelectorAll(".b-select").forEach(element => {
+        element.classList.remove("b-select")
+    });
+
     // 遍历棋子位置，并在棋盘上创建对应的棋子元素
     for (let index = 0; index < pieces.length; index++) {
         const record = pieces[index];
         let ele = document.getElementById(record.pos)?.firstElementChild;
-
-        // 移除 select
-        document.querySelectorAll(".b-select").forEach(element => {
-            element.classList.remove("b-select")
-        });
+        if (!ele) continue;
 
         // 移除坐标原棋子
-        ele?.classList.forEach(cls => {
-            if (cls != "piece") {
-                ele?.classList.remove(cls)
-            }
-        });
+        const toRemove = Array.from(ele.classList).filter(cls => cls !== "piece");
+        toRemove.forEach(cls => ele.classList.remove(cls));
+
         // 添加新棋子
-        if (record.piece != " ") {
-            ele?.classList.add(`piece-${record.piece}`);
+        if (record.piece !== " ") {
+            ele.classList.add(`piece-${record.piece}`);
         }
     }
 }
 
 onMounted(async () => {
-    await emit('position', startpos)
+    await setPiecesOnBoard(startpos);
 })
 
 const mirror = ref(false);
@@ -117,11 +116,10 @@ listen('move', async (event) => {
 
     // 移除目标坐标棋子
     let ele = document.getElementById(change.to)?.firstElementChild;
-    ele?.classList.forEach(cls => {
-        if (cls != "piece") {
-            ele?.classList.remove(cls)
-        }
-    });
+    if (ele) {
+        const toRemove = Array.from(ele.classList).filter(cls => cls !== "piece");
+        toRemove.forEach(cls => ele.classList.remove(cls));
+    }
 
     // 目标坐标添加棋子
     document.getElementById(change.to)?.firstElementChild?.classList.add(token);

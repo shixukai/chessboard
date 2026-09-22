@@ -40,32 +40,34 @@ impl Config {
     pub fn load(base: &Path) -> Self {
         let dir = base.join("xqlink");
         if !dir.exists() {
-            let _ = fs::create_dir(&dir);
+            let _ = fs::create_dir_all(&dir);
         };
 
         let config_path = dir.join("config.json");
         debug!("load config from '{}'", config_path.display());
 
         if config_path.exists() {
-            let reader = BufReader::new(File::open(&config_path).unwrap());
-            if let Ok(mut config) = serde_json::from_reader::<_, Config>(reader) {
-                match config.config_path {
-                    Some(ref path) => {
-                        if path != &config_path {
+            if let Ok(file) = File::open(&config_path) {
+                let reader = BufReader::new(file);
+                if let Ok(mut config) = serde_json::from_reader::<_, Config>(reader) {
+                    match config.config_path {
+                        Some(ref path) => {
+                            if path != &config_path {
+                                config.config_path = Some(config_path);
+                                config.save();
+                            }
+                        }
+                        None => {
                             config.config_path = Some(config_path);
                             config.save();
                         }
-                    }
-                    None => {
-                        config.config_path = Some(config_path);
-                        config.save();
-                    }
-                };
-                return config;
-            };
+                    };
+                    return config;
+                }
+            }
 
             // 解析失败代表配置不兼容, 直接删除后重新使用默认配置，后续考虑增量更新方式
-            std::fs::remove_file(&config_path).unwrap();
+            let _ = std::fs::remove_file(&config_path);
             debug!("remove old config '{}'", config_path.display())
         }
 
@@ -129,7 +131,7 @@ pub async fn set_engine_hash(size: usize) {
 pub async fn set_chessdb(enabled: bool, timeout: Option<u64>) {
     let state = SHARED_STATE.get().unwrap();
     let mut config = state.config.write().unwrap();
-    let timeout = timeout.unwrap_or_else(|| config.engine.chessdb_timeout.min(1));
+    let timeout = timeout.unwrap_or(config.engine.chessdb_timeout).max(1);
     config.engine.chessdb_enabled = enabled;
     config.engine.chessdb_timeout = timeout;
     config.save();

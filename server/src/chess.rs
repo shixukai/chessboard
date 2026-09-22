@@ -95,12 +95,13 @@ pub struct Changed {
 
 impl Changed {
     pub fn from_pv(pv: &str, board: [[char; 9]; 10]) -> Self {
-        let (from, to) = pv.split_at(2);
-        let mut cs = pv.chars();
-        let from_x = cs.next().unwrap() as usize - 97;
-        let from_y = 57 - cs.next().unwrap() as usize;
-        let piece = board[from_y][from_x];
-        Self { piece, camp: Camp::from_piece(piece), from: from.to_string(), to: to.to_string() }
+        if let Some(mv) = Move::try_from_str(pv) {
+            let (from, to) = pv.split_at(2);
+            let piece = board[mv.from_y][mv.from_x];
+            Self { piece, camp: Camp::from_piece(piece), from: from.to_string(), to: to.to_string() }
+        } else {
+            Self::default()
+        }
     }
 }
 
@@ -145,18 +146,36 @@ pub struct Move {
 }
 
 impl Move {
+    #[allow(dead_code)]
     pub fn new(iccs: &str) -> Self {
-        let mut cs = iccs.chars();
-        let from_x = cs.next().unwrap() as usize - 97;
-        let from_y = 57 - cs.next().unwrap() as usize;
-        let to_x = cs.next().unwrap() as usize - 97;
-        let to_y = 57 - cs.next().unwrap() as usize;
-        Self { from_x, from_y, to_x, to_y }
+        Self::try_from_str(iccs).unwrap_or(Self { from_x: 0, from_y: 0, to_x: 0, to_y: 0 })
+    }
+
+    pub fn try_from_str(iccs: &str) -> Option<Self> {
+        if iccs.len() < 4 {
+            return None;
+        }
+        let b = iccs.as_bytes();
+        let fx = b[0];
+        let fy = b[1];
+        let tx = b[2];
+        let ty = b[3];
+        if !(b'a'..=b'i').contains(&fx) || !(b'0'..=b'9').contains(&fy)
+            || !(b'a'..=b'i').contains(&tx) || !(b'0'..=b'9').contains(&ty) {
+            return None;
+        }
+        let from_x = (fx - b'a') as usize;
+        let from_y = (b'9' - fy) as usize;
+        let to_x = (tx - b'a') as usize;
+        let to_y = (b'9' - ty) as usize;
+        Some(Self { from_x, from_y, to_x, to_y })
     }
 }
 
 pub fn board_move(board: [[char; 9]; 10], iccs: &str) -> [[char; 9]; 10] {
-    let mv = Move::new(iccs);
+    let Some(mv) = Move::try_from_str(iccs) else {
+        return board;
+    };
     let mut new_board = board;
     let p = new_board[mv.from_y][mv.from_x];
     new_board[mv.to_y][mv.to_x] = p;
@@ -392,20 +411,25 @@ fn overlap_piece_xy(board: [[char; 9]; 10], from_x: usize, piece: char) -> Optio
     let mut other_xys = HashMap::new();
     for x in 0..9 {
         if x != from_x {
-            let other_ys = overlap_piece_y(board, x, 10, piece); // 注意：这里将y设置为10是一个技巧，因为我们的棋盘只有10行，所以永远不会找到y==10的情况。但这样做并不是最好的方式。
+            let other_ys = overlap_piece_y(board, x, 10, piece);
             if other_ys.len() > 1 {
                 other_xys.insert(x, other_ys);
-                return Some(other_xys);
             }
         }
     }
-    None
+    if other_xys.is_empty() {
+        None
+    } else {
+        Some(other_xys)
+    }
 }
 
 // 棋子坐标移动转中文模式
 pub fn board_move_chinese(board: [[char; 9]; 10], iccs: &str) -> String {
     let mut chinese = String::new();
-    let mv = Move::new(iccs);
+    let Some(mv) = Move::try_from_str(iccs) else {
+        return chinese;
+    };
     let piece = board[mv.from_y][mv.from_x];
     let verticals = get_verticals(piece);
     match piece {
@@ -613,20 +637,23 @@ pub fn board_move_chinese(board: [[char; 9]; 10], iccs: &str) -> String {
                     let value = (mv.from_x + 10) * 100 - mv.from_y;
                     other_ys.push(value);
                     other_ys.sort_by(|a, b| b.cmp(a));
-                    let seq = other_ys.iter().position(|&v| v == value).map(|i| i + 1).unwrap();
-                    chinese.push(verticals[9 - seq]);
+                    let seq = other_ys.iter().position(|&v| v == value).map(|i| i + 1).unwrap_or(1);
+                    chinese.push(verticals[(9 - seq).min(8)]);
                 } else if other_ys.len() > 1 {
-                    // 找出当前纵向重叠数量
-                    let mut num = 1;
-                    for y in other_ys {
-                        if mv.from_y < y {
-                            break;
-                        }
-                        num += 1;
+                    // 同一纵线上有 3 个或更多兵
+                    let mut all_ys = other_ys;
+                    all_ys.push(mv.from_y);
+                    all_ys.sort(); // y 小的是前（靠近敌方），y 大的是后
+                    let rank = all_ys.iter().position(|&y| y == mv.from_y).unwrap_or(0);
+                    if all_ys.len() == 3 {
+                        let names = ['前', '中', '后'];
+                        chinese.push(names[rank]);
+                    } else {
+                        let names = ['一', '二', '三', '四', '五'];
+                        chinese.push(names[rank.min(4)]);
                     }
-                    chinese.push_str(num.to_string().as_str());
                 } else {
-                    // 只有前后
+                    // 只有前后两个兵
                     if mv.from_y > other_ys[0] {
                         chinese.push('后');
                     } else {
@@ -669,20 +696,23 @@ pub fn board_move_chinese(board: [[char; 9]; 10], iccs: &str) -> String {
                     let value = mv.from_x * 100 + mv.from_y;
                     other_ys.push(value);
                     other_ys.sort_by(|a, b| b.cmp(a));
-                    let seq = other_ys.iter().position(|&v| v == value).unwrap();
-                    chinese.push(verticals[seq]);
+                    let seq = other_ys.iter().position(|&v| v == value).unwrap_or(0);
+                    chinese.push(verticals[seq.min(8)]);
                 } else if other_ys.len() > 1 {
-                    // 找出当前纵向重叠数量
-                    let mut num = 0;
-                    for y in other_ys {
-                        if mv.from_y > y {
-                            break;
-                        }
-                        num += 1;
+                    // 同一纵线上有 3 个或更多卒
+                    let mut all_ys = other_ys;
+                    all_ys.push(mv.from_y);
+                    all_ys.sort_by(|a, b| b.cmp(a)); // y 大的是前（靠近敌方），y 小的是后
+                    let rank = all_ys.iter().position(|&y| y == mv.from_y).unwrap_or(0);
+                    if all_ys.len() == 3 {
+                        let names = ['前', '中', '后'];
+                        chinese.push(names[rank]);
+                    } else {
+                        let names = ['1', '2', '3', '4', '5'];
+                        chinese.push(names[rank.min(4)]);
                     }
-                    chinese.push_str(num.to_string().as_str());
                 } else {
-                    // 只有前后
+                    // 只有前后两个卒
                     if mv.from_y > other_ys[0] {
                         chinese.push('前');
                     } else {

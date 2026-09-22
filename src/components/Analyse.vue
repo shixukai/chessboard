@@ -33,16 +33,23 @@ listen('analyse', async (event) => {
         }
         logInstRef.value?.scrollTo({ position: 'bottom', silent: true })
     }
-    best.value.move = data.moves[0];
+    best.value.move = data.moves && data.moves.length > 0 ? data.moves[0] : "----";
     best.value.depth = data.depth;
     best.value.score = data.score;
 
-    // 设置b-select
-    let pv = data.pvs[0];
-    let from = pv.substring(0, 2);
-    let to = pv.substring(2, 4)
-    document.getElementById(from)?.classList.add("b-select");
-    document.getElementById(to)?.classList.add("b-select");
+    // 清理历史 b-select
+    document.querySelectorAll(".b-select").forEach((element) => {
+        element.classList.remove("b-select");
+    });
+
+    // 设置新的 b-select
+    if (data.pvs && data.pvs.length > 0 && data.pvs[0].length >= 4) {
+        let pv = data.pvs[0];
+        let from = pv.substring(0, 2);
+        let to = pv.substring(2, 4);
+        document.getElementById(from)?.classList.add("b-select");
+        document.getElementById(to)?.classList.add("b-select");
+    }
 })
 
 
@@ -65,7 +72,7 @@ const logInstRef = ref<LogInst | null>(null)
             </n-text>
         </n-flex>
         <n-divider />
-        <n-log class="analyse-log" :rows=18 ref="logInst" :line-height="1.5" :lines="logs" :font-size="10" />
+        <n-log class="analyse-log" :rows=18 ref="logInstRef" :line-height="1.5" :lines="logs" :font-size="10" />
     </n-card>
 </template>
 

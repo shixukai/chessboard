@@ -31,6 +31,7 @@ struct BoardAnalysisResult {
 #[derive(PartialEq)]
 enum ChessboardState {
     Initial,      // 初始状态，没有进行任何分析
+    #[allow(dead_code)]
     StartPos,     // 初始棋盘状态
     OurTurn,      // 我方行棋
     OpponentTurn, // 对方行棋
@@ -71,14 +72,17 @@ impl AnalysisContext {
 
     // 获取棋盘图像并分析
     fn capture_and_analyze_board(&self) -> Option<(chess::Camp, [[char; 9]; 10])> {
-        let image = self.window.capture();
+        let image = self.window.capture()?;
         get_board(image)
     }
 
     // 确认棋盘状态是否稳定
     fn confirm_board(&self, board: [[char; 9]; 10]) -> bool {
         thread::sleep(Duration::from_millis(100));
-        let conf_image = self.window.capture();
+        let conf_image = match self.window.capture() {
+            Some(img) => img,
+            None => return false,
+        };
         if let Some((_, conf_board)) = get_board(conf_image) {
             return conf_board == board;
         }
@@ -101,12 +105,12 @@ impl AnalysisContext {
     // 更新UI显示
     fn update_ui(&self, camp: &chess::Camp, board: [[char; 9]; 10]) {
         let board_map = chess::board_map(board);
-        self.app.emit("mirror", camp.is_black()).unwrap();
-        self.app.emit("position", &board_map).unwrap();
+        let _ = self.app.emit("mirror", camp.is_black());
+        let _ = self.app.emit("position", &board_map);
     }
 
     // 处理移动事件
-    fn handle_move(&mut self, changed: &chess::Changed) { self.app.emit("move", changed).unwrap(); }
+    fn handle_move(&mut self, changed: &chess::Changed) { let _ = self.app.emit("move", changed); }
 
     // 处理错误变化计数
     fn handle_invalid_change(
@@ -129,21 +133,25 @@ impl AnalysisContext {
 }
 
 pub fn get_board(image: ImageBuffer<Rgba<u8>, Vec<u8>>) -> Option<(chess::Camp, [[char; 9]; 10])> {
-    let data = predict(image).unwrap();
-    if let Ok((camp, mut board)) = common::detections_to_board(&data) {
-        chess::board_fix(&camp, &mut board);
-        Some((camp, board))
-    } else {
-        None
+    if let Ok(data) = predict(image) {
+        if let Ok((camp, mut board)) = common::detections_to_board(&data) {
+            chess::board_fix(&camp, &mut board);
+            return Some((camp, board));
+        }
     }
+    None
 }
 
 pub fn analyse(app: &AppHandle, mut result: QueryResult, board: [[char; 9]; 10]) -> (chess::Changed, [[char; 9]; 10]) {
     // 引擎结果翻译为中文
-    let best_pv = result.pvs.first().unwrap();
-    let best_move = chess::board_move_chinese(board, best_pv);
-    let expect_board = chess::board_move(board, best_pv);
-    let expect_move = chess::Changed::from_pv(best_pv, board);
+    let Some(best_pv) = result.pvs.first().cloned() else {
+        info!("分析无有效走法 {:?}", result);
+        let _ = app.emit("analyse", result);
+        return (chess::Changed::default(), board);
+    };
+    let best_move = chess::board_move_chinese(board, &best_pv);
+    let expect_board = chess::board_move(board, &best_pv);
+    let expect_move = chess::Changed::from_pv(&best_pv, board);
 
     let mut tmp_board = expect_board;
     result.moves.push(best_move);
@@ -154,7 +162,7 @@ pub fn analyse(app: &AppHandle, mut result: QueryResult, board: [[char; 9]; 10])
     }
     // 把结果发送给前端
     info!("分析结果 {:?}", result);
-    app.emit("analyse", result).unwrap();
+    let _ = app.emit("analyse", result);
 
     // 返回一个预期move和预期board
     (expect_move, expect_board)
@@ -188,26 +196,31 @@ fn process_analysis_loop(mut context: AnalysisContext) {
         current_state = match current_state {
             ChessboardState::Initial => {
                 // 初始状态，做第一次分析
-                debug!("首次启动，立即分析");
+                debug!("首次启动");
 
                 // 设置前端棋盘
                 context.update_ui(&camp, board);
-
-                // 分析当前棋盘
-                if let Some(result) = context.analyze_board(&camp, board) {
-                    context.expect_move = result.expect_move;
-                    context.expect_board = result.expect_board;
-                }
-
                 context.last_board = board;
 
-                // 如果是初始棋盘，进入初始状态，否则进入一般状态
                 if chess::startpos(board) {
-                    ChessboardState::StartPos
-                } else if camp.eq(&chess::Camp::Red) {
-                    ChessboardState::OurTurn
+                    if camp.eq(&chess::Camp::Red) {
+                        debug!("初始棋盘，我方红先，立即分析");
+                        if let Some(result) = context.analyze_board(&camp, board) {
+                            context.expect_move = result.expect_move;
+                            context.expect_board = result.expect_board;
+                        }
+                        ChessboardState::OurTurn
+                    } else {
+                        debug!("初始棋盘，对方红先，等待对方走棋");
+                        ChessboardState::OpponentTurn
+                    }
                 } else {
-                    ChessboardState::OpponentTurn
+                    debug!("中局启动，立即分析当前局面");
+                    if let Some(result) = context.analyze_board(&camp, board) {
+                        context.expect_move = result.expect_move;
+                        context.expect_board = result.expect_board;
+                    }
+                    ChessboardState::OurTurn
                 }
             }
 
@@ -227,15 +240,15 @@ fn process_analysis_loop(mut context: AnalysisContext) {
                                 context.handle_move(&changed);
 
                                 if camp.eq(&changed.camp) {
-                                    // 我方移动
-                                    ChessboardState::OurTurn
+                                    // 我方移动完毕，等待对方走棋
+                                    ChessboardState::OpponentTurn
                                 } else {
-                                    // 对方移动，需要分析
+                                    // 对方移动完毕，需要分析我方走法
                                     if let Some(result) = context.analyze_board(&camp, board) {
                                         context.expect_move = result.expect_move;
                                         context.expect_board = result.expect_board;
                                     }
-                                    ChessboardState::OpponentTurn
+                                    ChessboardState::OurTurn
                                 }
                             }
                             chess::BoardChangeState::One => {
@@ -287,14 +300,11 @@ fn process_analysis_loop(mut context: AnalysisContext) {
                     let expect_move = context.expect_move.clone();
                     let expect_board = context.expect_board;
                     context.last_board = expect_board;
+                    context.expect_board = [[' '; 9]; 10]; // 清空已满足的预期棋盘
                     context.handle_move(&expect_move);
 
-                    // 更换下一个行动方
-                    if current_state == ChessboardState::OurTurn {
-                        ChessboardState::OpponentTurn
-                    } else {
-                        ChessboardState::OurTurn
-                    }
+                    // 我方走完预期棋后进入等待对方回合
+                    ChessboardState::OpponentTurn
                 } else {
                     // 确认棋盘变化是否稳定
                     if !context.confirm_board(board) {
@@ -314,20 +324,21 @@ fn process_analysis_loop(mut context: AnalysisContext) {
                         match board_state {
                             chess::BoardChangeState::Move => {
                                 context.last_board = board;
+                                context.expect_board = [[' '; 9]; 10]; // 出现新招法，清空预期
                                 context.handle_move(&changed);
 
                                 if camp.eq(&changed.camp) {
-                                    // 我方移动，跳过分析
-                                    debug!("我方移动, {} -> {}, 跳过分析", changed.from, changed.to);
-                                    ChessboardState::OurTurn
+                                    // 我方移动，进入对方思考
+                                    debug!("我方移动, {} -> {}, 等待对方走棋", changed.from, changed.to);
+                                    ChessboardState::OpponentTurn
                                 } else {
-                                    // 对方移动，需要分析
-                                    debug!("对方移动, {} -> {}, 需要分析", changed.from, changed.to);
+                                    // 对方移动，进入我方分析
+                                    debug!("对方移动, {} -> {}, 开始分析我方走法", changed.from, changed.to);
                                     if let Some(result) = context.analyze_board(&camp, board) {
                                         context.expect_move = result.expect_move;
                                         context.expect_board = result.expect_board;
                                     }
-                                    ChessboardState::OpponentTurn
+                                    ChessboardState::OurTurn
                                 }
                             }
                             chess::BoardChangeState::One => {
@@ -356,19 +367,30 @@ fn process_analysis_loop(mut context: AnalysisContext) {
 #[tauri::command]
 pub async fn start_listen(app: AppHandle, target: Window) -> Result<(), String> {
     trace!("start_listen");
-    if SHARED_STATE.get().unwrap().listen_thread.try_lock().is_err() {
+    let shared_state = SHARED_STATE.get().unwrap();
+    let mut thread_guard = match shared_state.listen_thread.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if thread_guard.is_some() {
         error!("current listen thread is running, please stop it first");
         return Err("已经在监听中".to_string());
     }
 
     // 初始化监听窗口模块
-    let mut window = ListenWindow::new(&target, IMAGE_WIDTH, IMAGE_HEIGHT).unwrap(); // 创建窗口实例
-    let image = window.capture();
+    let Some(mut window) = ListenWindow::new(&target, IMAGE_WIDTH, IMAGE_HEIGHT) else {
+        return Err("未找到指定窗口".to_string());
+    };
+    let Some(image) = window.capture() else {
+        return Err("截取窗口图像失败".to_string());
+    };
 
     let image_h = image.height();
     let image_w = image.width();
 
-    let detections = predict(image).unwrap();
+    let Ok(detections) = predict(image) else {
+        return Err("模型推理识别失败".to_string());
+    };
 
     match common::detections_bound(image_w, image_h, &detections) {
         Ok((x, y, w, h)) => {
@@ -388,7 +410,7 @@ pub async fn start_listen(app: AppHandle, target: Window) -> Result<(), String> 
         process_analysis_loop(context);
     });
 
-    SHARED_STATE.get().unwrap().listen_thread.lock().unwrap().replace(listen_thread);
+    thread_guard.replace(listen_thread);
 
     Ok(())
 }
@@ -397,12 +419,13 @@ pub async fn start_listen(app: AppHandle, target: Window) -> Result<(), String> 
 pub fn stop_listen() {
     info!("stop listen");
     let shared_state = SHARED_STATE.get().unwrap();
-    if let Ok(mut state) = shared_state.listen_thread.lock()
-        && let Some(listen_thread) = state.take() {
+    if let Ok(mut state) = shared_state.listen_thread.lock() {
+        if let Some(listen_thread) = state.take() {
             // 释放锁，停止后台线程
             debug!("释放锁，停止后台线程");
             drop(state);
-            listen_thread.join().unwrap();
+            let _ = listen_thread.join();
         }
+    }
     debug!("stoped");
 }

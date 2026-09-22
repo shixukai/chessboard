@@ -61,5 +61,5 @@ pub fn init_tracer(level: Level, home_dir: &std::path::Path) {
         .compact();
 
     // 组装并设置订阅者
-    registry().with(filter).with(console_layer).with(file_layer).init();
+    let _ = registry().with(filter).with(console_layer).with(file_layer).try_init();
 }
