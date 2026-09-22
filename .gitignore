@@ -30,3 +30,10 @@ dist-ssr
 *.dylib
 __pycache__
 !pikafish-windows.exe
+
+# Portable tools & release builds
+/app/
+/app-rotate/
+/installer/
+/node/
+/w64devkit/

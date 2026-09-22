@@ -82,9 +82,12 @@ const logInstRef = ref<LogInst | null>(null)
 }
 
 .textlog {
-    width: 260px;
-    height: 440px;
-    left: 400px;
+    position: absolute;
+    left: calc(24px + 380px * var(--board-scale, 1));
+    width: calc(100% - 36px - 380px * var(--board-scale, 1));
+    min-width: 200px;
+    height: calc(100% - 110px);
+    min-height: 440px;
     top: 0px;
 }
 </style>

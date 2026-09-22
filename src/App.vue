@@ -19,23 +19,13 @@ import Toolbar from "./components/Toolbar.vue";
 
         <!-- 下方右侧 -->
         <Analyse />
-
-        <n-layout-footer class="footer" position="absolute">
-            <a href="https://github.com/atopx/chessboard.git">atopx: 中国象棋学习工具, 开源免费</a>
-        </n-layout-footer>
     </n-dialog-provider>
 </template>
 
 <style scoped>
-.footer {
-    left: 13px;
-    bottom: 5px;
-    font-size: x-small;
-}
-
 .spliter-toolbar {
     position: absolute;
-    width: 630px;
+    width: calc(100% - 20px);
     top: 60px;
     left: 10px;
     z-index: 1;
@@ -43,9 +33,10 @@ import Toolbar from "./components/Toolbar.vue";
 
 .spliter-middle {
     position: absolute;
-    left: 398px;
+    left: calc(20px + 380px * var(--board-scale, 1));
     top: 100px;
-    height: 425px;
+    height: calc(100% - 110px);
+    min-height: 425px;
     z-index: 1;
 }
 </style>

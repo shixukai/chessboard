@@ -1,7 +1,7 @@
 <script setup lang="ts">
 
 import { listen } from "@tauri-apps/api/event";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import "../assets/css/chessboard.css";
 
@@ -78,9 +78,22 @@ async function setPiecesOnBoard(pieces: Position[]) {
     }
 }
 
+function updateBoardScale() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const s = Math.max(0.7, Math.min((h - 120) / 420, (w - 270) / 380));
+    document.documentElement.style.setProperty("--board-scale", s.toFixed(3));
+}
+
 onMounted(async () => {
     await setPiecesOnBoard(startpos);
-})
+    updateBoardScale();
+    window.addEventListener("resize", updateBoardScale);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("resize", updateBoardScale);
+});
 
 const mirror = ref(false);
 
