@@ -13,7 +13,6 @@ import {
     NDrawer,
     NDrawerContent,
     NSpace,
-    NTooltip,
     NDivider,
     NEmpty,
     NScrollbar,
@@ -45,7 +44,6 @@ interface EngineConfig {
     time: number;
     threads: number;
     hash: number;
-    // show_wdl: number;
     chessdb_enabled: boolean;
     chessdb_timeout: number;
 }
@@ -93,7 +91,7 @@ async function startListen() {
         if (windows.length === 0) {
             dialog.warning({
                 title: "警告",
-                content: "没有找到可用的窗口",
+                content: "没有找到可用的棋盘窗口，请先打开天天象棋或QQ游戏",
                 positiveText: "确定",
                 showIcon: true,
             });
@@ -117,7 +115,7 @@ async function startListen() {
                     h(NFlex, { vertical: true, style: "gap: 16px" }, [
                         h(NInput, {
                             clearable: true,
-                            placeholder: "搜索窗口...",
+                            placeholder: "搜索天天象棋 / 棋盘窗口...",
                             value: searchQuery.value,
                             "onUpdate:value": (val: string) => (searchQuery.value = val),
                             style: "width: 100%",
@@ -185,10 +183,10 @@ async function startListen() {
 
         // 显示窗口选择对话框
         dialog.info({
-            title: "选择要监听的窗口",
+            title: "选择目标棋盘窗口",
             class: "window-select-dialog",
             content: () => h(WindowSelector),
-            positiveText: "确定",
+            positiveText: "确定选择并开始",
             negativeText: "取消",
             style: "max-width: 500px",
             maskClosable: false,
@@ -196,10 +194,10 @@ async function startListen() {
                 if (!selectedWindowId.value) {
                     dialog.warning({
                         title: "提示",
-                        content: "请先选择一个窗口",
+                        content: "请先点击选中一个窗口",
                         positiveText: "确定",
                     });
-                    return false; // 阻止对话框关闭
+                    return false;
                 }
 
                 const window = windows.find((w) => w.id === selectedWindowId.value);
@@ -264,9 +262,9 @@ async function toggleEngine() {
 </script>
 
 <template>
-    <n-card class="toolbar" :bordered="false" size="small">
-        <n-space vertical size="small">
-            <n-flex align="center" justify="space-between">
+    <n-card class="toolbar modern-toolbar" :bordered="false" size="small">
+        <n-flex align="center" justify="space-between" :wrap="false">
+            <n-flex align="center" :size="10">
                 <n-select
                     size="small"
                     v-model:value="mode"
@@ -275,64 +273,71 @@ async function toggleEngine() {
                     placeholder="选择模式"
                     class="mode-select"
                 />
-
-                <n-space>
-                    <n-tooltip trigger="hover" placement="bottom">
-                        <template #trigger>
-                            <n-button
-                                circle
-                                size="small"
-                                :type="isEngineRunning ? 'error' : 'primary'"
-                                @click="toggleEngine"
-                            >
-                                {{ isEngineRunning ? "停" : "启" }}
-                            </n-button>
-                        </template>
-                        {{ isEngineRunning ? "停止引擎" : "启动引擎" }}
-                    </n-tooltip>
-
-                    <n-tooltip trigger="hover" placement="bottom">
-                        <template #trigger>
-                            <n-button circle size="small" type="info" @click="showEngineConfig = true"
-                                >配</n-button
-                            >
-                        </template>
-                        引擎配置
-                    </n-tooltip>
-
-                    <n-divider vertical />
-
-                    <n-tooltip trigger="hover" placement="bottom">
-                        <template #trigger>
-                            <n-button circle size="small" type="success" disabled>识</n-button>
-                        </template>
-                        图片识别
-                    </n-tooltip>
-
-                    <n-tooltip trigger="hover" placement="bottom">
-                        <template #trigger>
-                            <n-button circle size="small" type="warning" disabled @click="copy_fen">复</n-button>
-                        </template>
-                        复制局面
-                    </n-tooltip>
-                </n-space>
+                <n-tag
+                    size="small"
+                    round
+                    :type="isEngineRunning ? 'success' : 'default'"
+                    :bordered="false"
+                    class="status-indicator"
+                >
+                    {{ isEngineRunning ? "● 实时监听中" : "○ 空闲待命" }}
+                </n-tag>
             </n-flex>
-        </n-space>
 
-        <n-drawer v-model:show="showEngineConfig" :width="300" placement="right">
-            <n-drawer-content title="引擎配置">
-                <n-form :model="config" label-placement="left" label-width="80">
-                    <n-form-item label="深度">
+            <n-space :size="8" align="center">
+                <n-button
+                    round
+                    size="small"
+                    :type="isEngineRunning ? 'error' : 'primary'"
+                    class="action-btn main-action-btn"
+                    @click="toggleEngine"
+                >
+                    <template #icon>
+                        <span>{{ isEngineRunning ? "⏹" : "▶" }}</span>
+                    </template>
+                    {{ isEngineRunning ? "停止监听" : "启动监听" }}
+                </n-button>
+
+                <n-button
+                    round
+                    size="small"
+                    secondary
+                    type="info"
+                    class="action-btn"
+                    @click="showEngineConfig = true"
+                >
+                    <template #icon><span>⚙</span></template>
+                    引擎配置
+                </n-button>
+
+                <n-button
+                    round
+                    size="small"
+                    secondary
+                    class="action-btn"
+                    @click="copy_fen"
+                    disabled
+                >
+                    <template #icon><span>📋</span></template>
+                    复制局面
+                </n-button>
+            </n-space>
+        </n-flex>
+
+        <n-drawer v-model:show="showEngineConfig" :width="320" placement="right">
+            <n-drawer-content title="Pikafish 引擎参数配置" closable>
+                <n-form :model="config" label-placement="left" label-width="90" style="padding-top: 10px">
+                    <n-form-item label="搜索深度">
                         <n-input-number
                             v-model:value="config.depth"
                             button-placement="both"
                             :min="0"
                             :max="200"
-                            style="width: 120px"
+                            style="width: 140px"
                             @update:value="setEngineDepth"
                         />
                     </n-form-item>
-                    <n-form-item label="时间">
+                    <n-form-item label="步时限制(s)">
                         <n-input-number
                             v-model:value="config.time"
                             button-placement="both"
@@ -340,31 +345,31 @@ async function toggleEngine() {
                             :precision="1"
                             :min="0"
                             :max="120"
-                            style="width: 120px"
+                            style="width: 140px"
                             @update:value="setEngineTime"
                         />
                     </n-form-item>
-                    <n-form-item label="线程数">
+                    <n-form-item label="CPU线程数">
                         <n-input-number
                             v-model:value="config.threads"
                             button-placement="both"
                             :min="1"
                             :max="64"
-                            style="width: 120px"
+                            style="width: 140px"
                             @update:value="setEngineThreads"
                         />
                     </n-form-item>
-                    <n-form-item label="哈希表(m)">
+                    <n-form-item label="哈希表(MB)">
                         <n-input-number
                             v-model:value="config.hash"
                             button-placement="both"
                             :min="32"
                             :max="102400"
-                            style="width: 120px"
+                            style="width: 140px"
                             @update:value="setEngineHash"
                         />
                     </n-form-item>
-                    <n-form-item label="启用云库">
+                    <n-form-item label="开局云库">
                         <n-switch v-model:value="config.chessdb_enabled" @update:value="setChessdb" />
                     </n-form-item>
                     <n-form-item label="云库超时(s)">
@@ -374,7 +379,7 @@ async function toggleEngine() {
                             :min="1"
                             :max="60"
                             :step="1"
-                            style="width: 120px"
+                            style="width: 140px"
                             @update:value="setChessdb"
                         />
                     </n-form-item>
@@ -387,26 +392,39 @@ async function toggleEngine() {
 <style scoped>
 .toolbar {
     width: 100%;
-    padding: 8px;
-    border-radius: 8px;
+    padding: 8px 14px;
+}
+
+.modern-toolbar {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .mode-select {
-    width: 110px;
+    width: 120px;
 }
 
-:deep(.n-button) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-    height: 36px;
-    transition: all 0.3s;
+.status-indicator {
+    font-size: 11px;
+    font-weight: 500;
 }
 
-:deep(.n-button:hover) {
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.action-btn {
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.main-action-btn {
+    font-weight: 600;
+    padding: 0 14px;
 }
 
 :deep(.window-title) {

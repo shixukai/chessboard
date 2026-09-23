@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NDivider, NLayoutFooter, NDialogProvider } from "naive-ui";
+import { NDialogProvider } from "naive-ui";
 import Analyse from "./components/Analyse.vue";
 import Chessboard from "./components/Chessboard.vue";
 import Toolbar from "./components/Toolbar.vue";
@@ -7,36 +7,36 @@ import Toolbar from "./components/Toolbar.vue";
 
 <template>
     <n-dialog-provider>
-        <!-- 最上面 -->
-        <Toolbar />
+        <div class="app-workbench">
+            <!-- 顶部现代工具栏 -->
+            <Toolbar />
 
-        <n-divider class="spliter-toolbar" />
-
-        <!-- 下方左侧 -->
-        <Chessboard />
-
-        <n-divider vertical class="spliter-middle" />
-
-        <!-- 下方右侧 -->
-        <Analyse />
+            <!-- 主工作区：左侧立体棋盘，右侧自适应分析面板 -->
+            <div class="workbench-body">
+                <Chessboard />
+                <Analyse />
+            </div>
+        </div>
     </n-dialog-provider>
 </template>
 
 <style scoped>
-.spliter-toolbar {
-    position: absolute;
-    width: calc(100% - 20px);
-    top: 60px;
-    left: 10px;
-    z-index: 1;
+.app-workbench {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    box-sizing: border-box;
+    background: #f1f5f9;
+    overflow: hidden;
 }
 
-.spliter-middle {
-    position: absolute;
-    left: calc(20px + 380px * var(--board-scale, 1));
-    top: 100px;
-    height: calc(100% - 110px);
-    min-height: 425px;
-    z-index: 1;
+.workbench-body {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    margin-top: 10px;
+    min-height: 0;
 }
 </style>
