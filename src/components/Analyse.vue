@@ -153,7 +153,7 @@ listen('analyse', async (event) => {
 <style scoped>
 .textlog {
     position: absolute;
-    top: 68px;
+    top: 72px;
     bottom: 14px;
     left: calc(24px + 380px * var(--board-scale, 1));
     right: 14px;

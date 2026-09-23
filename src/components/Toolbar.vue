@@ -395,10 +395,22 @@ async function toggleEngine() {
     top: 10px;
     left: 12px;
     width: calc(100% - 24px);
-    height: 46px;
+    height: 52px;
     box-sizing: border-box;
-    padding: 6px 14px;
+    padding: 0;
     z-index: 20;
+}
+
+:deep(.n-card__content) {
+    padding: 0 14px !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+}
+
+:deep(.n-card__content > .n-flex) {
+    width: 100%;
 }
 
 .modern-toolbar {
