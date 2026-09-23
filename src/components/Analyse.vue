@@ -153,12 +153,13 @@ listen('analyse', async (event) => {
 <style scoped>
 .textlog {
     position: absolute;
+    top: 68px;
+    bottom: 14px;
     left: calc(24px + 380px * var(--board-scale, 1));
-    width: calc(100% - 36px - 380px * var(--board-scale, 1));
-    min-width: 220px;
-    height: calc(100% - 110px);
-    min-height: 440px;
-    top: 0px;
+    right: 14px;
+    width: auto;
+    height: auto;
+    min-width: 240px;
 }
 
 .modern-analyse-panel {

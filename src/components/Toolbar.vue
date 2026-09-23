@@ -391,8 +391,14 @@ async function toggleEngine() {
 
 <style scoped>
 .toolbar {
-    width: 100%;
-    padding: 8px 14px;
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    width: calc(100% - 24px);
+    height: 46px;
+    box-sizing: border-box;
+    padding: 6px 14px;
+    z-index: 20;
 }
 
 .modern-toolbar {
